@@ -236,9 +236,9 @@ if __name__ == "__main__":
         operations=['+', '-'],  # Only addition and subtraction for now
         digit_ranges=digit_ranges,
         term_ranges=term_ranges,
-        problems_per_case=50,
-        train_split=0.8,
-        val_split=0.2
+        problems_per_case=100,
+        train_split=0.9,
+        val_split=0.1
     )
     
     # Save to disk

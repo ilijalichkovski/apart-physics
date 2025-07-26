@@ -16,21 +16,12 @@ def on_log(self, args, state, control, logs=None, **kwargs):
         _ = logs.pop("total_flos", None)
 ProgressCallback.on_log = on_log
 
-# Load and prep dataset
-
-SYSTEM_PROMPT = """
-Respond ONLY with the answer to the question in the following format:
-<answer>
-...
-</answer>
-"""
-
 def extract_xml_answer(text: str) -> str:
     answer = text.split("<answer>")[-1]
     answer = answer.split("</answer>")[0]
     return answer.strip()
 
-# Generate dataset using the new system
+# Load dataset using the new system
 dataset_dict = load_from_disk("arithmetic_dataset")
 train_dataset = dataset_dict['train']
 val_dataset = dataset_dict['validation']
@@ -68,8 +59,16 @@ def xmlcount_reward_func(completions, **kwargs) -> list[float]:
     contents = [completion[0]["content"] for completion in completions]
     return [count_xml(c) for c in contents]
 
+# Create reward function to penalize longer completions
+def length_penalty_reward_func(completions, **kwargs) -> list[float]:
+    """
+    Penalizes longer completions by returning a negative reward proportional to the length.
+    """
+    contents = [completion[0]["content"] for completion in completions]
+    return [-len(c) * 0.01 for c in contents]  # Adjust the factor as needed
+
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
-model_name = "Qwen/Qwen2.5-1.5B"
+model_name = "unsloth/Qwen3-0.6B"
 
 output_dir="outputs/arithmetic-grpo"
 
@@ -89,20 +88,21 @@ training_args = GRPOConfig(
     optim="adamw_8bit",
     torch_compile=True,
     per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
     gradient_accumulation_steps=4,
     num_generations=4,
     max_prompt_length=128,
-    max_completion_length=256,
+    max_completion_length=512,
     num_train_epochs=1,
-    save_steps=100,
     max_grad_norm=0.1,
     report_to="wandb",
     log_on_each_node=False,
+    eval_steps=100,
 )
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype="auto",
+    torch_dtype=torch.bfloat16,
     attn_implementation="sdpa", # For the love of me, I cannot install flash attention
     device_map="auto",    
 )
@@ -110,7 +110,6 @@ model = AutoModelForCausalLM.from_pretrained(
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 
-# use peft at your own risk; not working for me with multi-GPU training
 trainer = GRPOTrainer(
     model=model,
     processing_class=tokenizer,
@@ -118,8 +117,10 @@ trainer = GRPOTrainer(
         correctness_reward_func,
         xmlcount_reward_func,
         numeric_reward_func,
+        length_penalty_reward_func
     ],
     args=training_args,
     train_dataset=train_dataset,
+    eval_dataset=val_dataset,
 )
 trainer.train()

@@ -65,7 +65,7 @@ def length_penalty_reward_func(completions, **kwargs) -> list[float]:
     Penalizes longer completions by returning a negative reward proportional to the length.
     """
     contents = [completion[0]["content"] for completion in completions]
-    return [-len(c) * 0.02 for c in contents]  # Adjust the factor as needed
+    return [-len(c) * 0.002 for c in contents]  # Adjust the factor as needed
 
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
 model_name = "unsloth/Qwen3-0.6B"
@@ -87,12 +87,12 @@ num_generations = 4
 train_dataset_size = len(train_dataset)
 effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps
 steps_per_epoch = (train_dataset_size * num_generations) // effective_batch_size
-eval_steps = max(1, steps_per_epoch // 10)  # Evaluate at ~10% intervals
+eval_steps = max(1, steps_per_epoch // 5)  # Evaluate at ~20% intervals
 
 print(f"Training dataset size: {train_dataset_size}")
 print(f"Effective batch size: {effective_batch_size}")  
 print(f"Steps per epoch: {steps_per_epoch}")
-print(f"Eval steps (10% intervals): {eval_steps}")
+print(f"Eval steps (20% intervals): {eval_steps}")
     
 training_args = GRPOConfig(
     output_dir=output_dir,
@@ -139,4 +139,6 @@ trainer = GRPOTrainer(
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
 )
+
+trainer.evaluate()
 trainer.train()

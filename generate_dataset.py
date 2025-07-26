@@ -12,7 +12,7 @@ import itertools
 SYSTEM_PROMPT = """
 Respond ONLY with the answer to the question in the following format:
 <answer>
-...
+numerical_answer
 </answer>
 Don't overthink it.
 """
@@ -65,21 +65,23 @@ def generate_problems_for_case(
     operation: str, 
     num_digits: int, 
     num_terms: int, 
-    num_problems: int = 50
-) -> Dict[str, List]:
+    num_problems: int = 50,
+    train_split: float = 0.8
+) -> Tuple[Dict[str, List], Dict[str, List]]:
     """
-    Generate multiple problems for a specific case configuration.
+    Generate multiple problems for a specific case configuration with stratified split.
     
     Args:
         operation: The operation to use
         num_digits: Maximum number of digits
         num_terms: Number of terms
         num_problems: Number of problems to generate
+        train_split: Fraction for training set
     
     Returns:
-        Dictionary with problem data
+        Tuple of (train_problems, val_problems) dictionaries
     """
-    problems = {
+    train_problems = {
         "problem": [],
         "answer": [],
         "operation": [],
@@ -87,15 +89,37 @@ def generate_problems_for_case(
         "num_terms": []
     }
     
-    for _ in range(num_problems):
-        problem, answer = generate_single_problem(operation, num_digits, num_terms)
-        problems["problem"].append(problem)
-        problems["answer"].append(answer)
-        problems["operation"].append(operation)
-        problems["num_digits"].append(num_digits)
-        problems["num_terms"].append(num_terms)
+    val_problems = {
+        "problem": [],
+        "answer": [],
+        "operation": [],
+        "num_digits": [],
+        "num_terms": []
+    }
     
-    return problems
+    # Calculate split sizes
+    train_size = int(num_problems * train_split)
+    val_size = num_problems - train_size
+    
+    # Generate training problems
+    for _ in range(train_size):
+        problem, answer = generate_single_problem(operation, num_digits, num_terms)
+        train_problems["problem"].append(problem)
+        train_problems["answer"].append(answer)
+        train_problems["operation"].append(operation)
+        train_problems["num_digits"].append(num_digits)
+        train_problems["num_terms"].append(num_terms)
+    
+    # Generate validation problems
+    for _ in range(val_size):
+        problem, answer = generate_single_problem(operation, num_digits, num_terms)
+        val_problems["problem"].append(problem)
+        val_problems["answer"].append(answer)
+        val_problems["operation"].append(operation)
+        val_problems["num_digits"].append(num_digits)
+        val_problems["num_terms"].append(num_terms)
+    
+    return train_problems, val_problems
 
 def create_prompt_format(problem: str, answer: str) -> Dict[str, any]:
     """
@@ -125,7 +149,7 @@ def generate_full_dataset(
     val_split: float = 0.2
 ) -> DatasetDict:
     """
-    Generate the complete dataset with all combinations of parameters.
+    Generate the complete dataset with all combinations of parameters and stratified splits.
     
     Args:
         operations: List of operations to use
@@ -138,7 +162,7 @@ def generate_full_dataset(
     Returns:
         DatasetDict with train and validation splits
     """
-    all_problems = {
+    all_train_problems = {
         "problem": [],
         "answer": [],
         "operation": [],
@@ -146,35 +170,45 @@ def generate_full_dataset(
         "num_terms": []
     }
     
-    # Generate all combinations
+    all_val_problems = {
+        "problem": [],
+        "answer": [],
+        "operation": [],
+        "num_digits": [],
+        "num_terms": []
+    }
+    
+    # Generate all combinations with stratified splits
     for operation, num_digits, num_terms in itertools.product(operations, digit_ranges, term_ranges):
-        case_problems = generate_problems_for_case(
-            operation, num_digits, num_terms, problems_per_case
+        train_case_problems, val_case_problems = generate_problems_for_case(
+            operation, num_digits, num_terms, problems_per_case, train_split
         )
         
-        # Add to master dataset
-        for key in all_problems.keys():
-            all_problems[key].extend(case_problems[key])
+        # Add to master datasets
+        for key in all_train_problems.keys():
+            all_train_problems[key].extend(train_case_problems[key])
+            if val_case_problems[key]:  # Only add if validation problems exist
+                all_val_problems[key].extend(val_case_problems[key])
     
-    # Create dataset and add prompt formatting
-    dataset = Dataset.from_dict(all_problems)
-    dataset = dataset.map(lambda x: {
+    # Create datasets and add prompt formatting
+    train_dataset = Dataset.from_dict(all_train_problems)
+    train_dataset = train_dataset.map(lambda x: {
         **create_prompt_format(x['problem'], x['answer']),
         'operation': x['operation'],
         'num_digits': x['num_digits'],
         'num_terms': x['num_terms']
     })
     
-    # Split dataset randomly
-    # dataset = dataset.shuffle(seed=42)
-    total_size = len(dataset)
-    train_size = int(total_size * train_split)
-    
-    train_dataset = dataset.select(range(train_size))
-    
-    # Only create validation set if val_split > 0
-    if val_split > 0 and train_size < total_size:
-        val_dataset = dataset.select(range(train_size, total_size))
+    # Create validation dataset if there are validation problems
+    if any(len(problems) > 0 for problems in all_val_problems.values()):
+        val_dataset = Dataset.from_dict(all_val_problems)
+        val_dataset = val_dataset.map(lambda x: {
+            **create_prompt_format(x['problem'], x['answer']),
+            'operation': x['operation'],
+            'num_digits': x['num_digits'],
+            'num_terms': x['num_terms']
+        })
+        
         return DatasetDict({
             'train': train_dataset,
             'validation': val_dataset
@@ -229,7 +263,7 @@ def save_dataset_as_jsonl(dataset: DatasetDict, output_path: str = "arithmetic_d
 
 if __name__ == "__main__":
     
-    digit_ranges = [3, 4, 5, 6]
+    digit_ranges = [5, 6, 7, 8]
     term_ranges = [2, 3, 4]
     
     # Generate the complete dataset
@@ -237,9 +271,9 @@ if __name__ == "__main__":
         operations=['+'],  # Only addition for now
         digit_ranges=digit_ranges,
         term_ranges=term_ranges,
-        problems_per_case=30,
-        train_split=0.9,
-        val_split=0.1
+        problems_per_case=40,
+        train_split=0.95,
+        val_split=0.05
     )
     
     # Save to disk
@@ -251,7 +285,6 @@ if __name__ == "__main__":
     # Print some statistics
     print("\nDataset Statistics:")
     print(f"Total combinations: {len(['+']) * len(digit_ranges) * len(term_ranges)}")
-    print(f"Problems per case: 50")
     total_problems = len(dataset['train'])
     if 'validation' in dataset:
         total_problems += len(dataset['validation'])

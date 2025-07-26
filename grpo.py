@@ -1,16 +1,5 @@
-# train_grpo.py
-#
-# See https://github.com/willccbb/verifiers for ongoing developments
-#
 """
-citation:
-@misc{brown2025grpodemo,
-  title={Granular Format Rewards for Eliciting Mathematical Reasoning Capabilities in Small Language Models},
-  author={Brown, William},
-  howpublished={\url{https://gist.github.com/willccbb/4676755236bb08cab5f4e54a0475d6fb}},
-  date = {2025-01-25},
-  note = {GitHub Gist}
-}
+adapted from will brown's grpo demo: https://gist.github.com/willccbb/4676755236bb08cab5f4e54a0475d6fb
 """
 
 import re
@@ -35,6 +24,7 @@ def extract_xml_answer(text: str) -> str:
     answer = answer.split("</answer>")[0]
     return answer.strip()
 
+# custom dataset generation with tunable parameters
 def generate_arithmetic_problems(
         max_digits: int = 4,
         num_terms: int = 2,
@@ -47,10 +37,26 @@ def generate_arithmetic_problems(
         problem = f"{terms[0]}"
 
         for i in range(num_terms-1):
-            problem += f" {random.choice(['+', '-', '*', '/'])} {terms[i + 1]} "
+            operation = random.choice(['+', '-', '*', '/'])
+            # avoid division by zero
+            if operation == '/' and terms[i + 1] == 0:
+                terms[i + 1] = 1
+            problem += f" {operation} {terms[i + 1]} "
         problem += f" = "
         problems["problem"].append(problem)
-        problems["answer"].append(eval(problem.replace('=', '').strip()))
+        
+        # Calculate answer and convert to string for consistent comparison
+        numeric_answer = eval(problem.replace('=', '').strip())
+        # Round division results to avoid floating point precision issues
+        if '/' in problem:
+            if numeric_answer == int(numeric_answer):
+                answer_str = str(int(numeric_answer))
+            else:
+                answer_str = f"{numeric_answer:.2f}".rstrip('0').rstrip('.')
+        else:
+            answer_str = str(int(numeric_answer))
+        
+        problems["answer"].append(answer_str)
 
     data = Dataset.from_dict(problems)
     data = data.map(lambda x: {
@@ -68,7 +74,7 @@ dataset = generate_arithmetic_problems(
     num_problems=1000,
 )
 
-# Reward functions
+# reward functions
 def correctness_reward_func(prompts, completions, answer, **kwargs) -> list[float]:
     responses = [completion[0]['content'] for completion in completions]
     q = prompts[0][-1]['content']
@@ -79,7 +85,13 @@ def correctness_reward_func(prompts, completions, answer, **kwargs) -> list[floa
 def int_reward_func(completions, **kwargs) -> list[float]:
     responses = [completion[0]['content'] for completion in completions]
     extracted_responses = [extract_xml_answer(r) for r in responses]
-    return [0.5 if r.isdigit() else 0.0 for r in extracted_responses]
+    def is_numeric(s):
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
+    return [0.5 if is_numeric(r) else 0.0 for r in extracted_responses]
 
 def count_xml(text) -> float:
     count = 0.0

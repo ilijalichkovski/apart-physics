@@ -76,6 +76,23 @@ wandb.init(
     project="apart-physics",
     entity="grpo-llc",
 )
+
+# Training configuration
+per_device_train_batch_size = 4
+gradient_accumulation_steps = 4
+num_generations = 4
+
+# Calculate eval_steps based on dataset size and training configuration
+# This ensures evaluation happens at ~10% intervals throughout an epoch
+train_dataset_size = len(train_dataset)
+effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps
+steps_per_epoch = (train_dataset_size * num_generations) // effective_batch_size
+eval_steps = max(1, steps_per_epoch // 10)  # Evaluate at ~10% intervals
+
+print(f"Training dataset size: {train_dataset_size}")
+print(f"Effective batch size: {effective_batch_size}")  
+print(f"Steps per epoch: {steps_per_epoch}")
+print(f"Eval steps (10% intervals): {eval_steps}")
     
 training_args = GRPOConfig(
     output_dir=output_dir,
@@ -85,19 +102,19 @@ training_args = GRPOConfig(
     lr_scheduler_type='cosine',
     logging_steps=1,
     bf16=True,
+    use_liger_loss=True,
     optim="adamw_8bit",
-    per_device_train_batch_size=4,
-    per_device_eval_batch_size=4,
-    gradient_accumulation_steps=4,
-    num_generations=4,
+    per_device_train_batch_size=per_device_train_batch_size,
+    per_device_eval_batch_size=per_device_train_batch_size,
+    gradient_accumulation_steps=gradient_accumulation_steps,
+    num_generations=num_generations,
     max_prompt_length=128,
     max_completion_length=512,
     num_train_epochs=1,
-    max_grad_norm=0.1,
     report_to="wandb",
     log_on_each_node=False,
-    do_eval=True,
-    eval_steps=13,
+    eval_strategy="steps",
+    eval_steps=eval_steps,
 )
 
 model = AutoModelForCausalLM.from_pretrained(

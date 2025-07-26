@@ -1,0 +1,41 @@
+{
+  "citation": "",
+  "description": "",
+  "features": {
+    "problem": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "answer": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "operation": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "num_digits": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "num_terms": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "prompt": {
+      "feature": {
+        "content": {
+          "dtype": "string",
+          "_type": "Value"
+        },
+        "role": {
+          "dtype": "string",
+          "_type": "Value"
+        }
+      },
+      "_type": "List"
+    }
+  },
+  "homepage": "",
+  "license": ""
+}

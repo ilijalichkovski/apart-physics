@@ -4,11 +4,10 @@ adapted from will brown's grpo demo: https://gist.github.com/willccbb/4676755236
 
 import re
 import torch
-from datasets import load_dataset, Dataset
+from datasets import load_dataset, Dataset, load_from_disk
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig
 from trl import GRPOConfig, GRPOTrainer
-import random
 
 # Load and prep dataset
 
@@ -24,55 +23,9 @@ def extract_xml_answer(text: str) -> str:
     answer = answer.split("</answer>")[0]
     return answer.strip()
 
-# custom dataset generation with tunable parameters
-def generate_arithmetic_problems(
-        max_digits: int = 4,
-        num_terms: int = 2,
-        num_problems: int = 10,
-) -> Dataset:
-    problems = {"problem": [], "answer": []}
-    for _ in range(num_problems):
-        terms = [random.randint(1, 10**max_digits) for _ in range(num_terms)]
-
-        problem = f"{terms[0]}"
-
-        for i in range(num_terms-1):
-            operation = random.choice(['+', '-', '*', '/'])
-            # avoid division by zero
-            if operation == '/' and terms[i + 1] == 0:
-                terms[i + 1] = 1
-            problem += f" {operation} {terms[i + 1]} "
-        problem += f" = "
-        problems["problem"].append(problem)
-        
-        # Calculate answer and convert to string for consistent comparison
-        numeric_answer = eval(problem.replace('=', '').strip())
-        # Round division results to avoid floating point precision issues
-        if '/' in problem:
-            if numeric_answer == int(numeric_answer):
-                answer_str = str(int(numeric_answer))
-            else:
-                answer_str = f"{numeric_answer:.2f}".rstrip('0').rstrip('.')
-        else:
-            answer_str = str(int(numeric_answer))
-        
-        problems["answer"].append(answer_str)
-
-    data = Dataset.from_dict(problems)
-    data = data.map(lambda x: {
-        'prompt': [
-            {'role': 'system', 'content': SYSTEM_PROMPT},
-            {'role': 'user', 'content': x['problem']}
-        ],
-        "answer": x["answer"]
-    })
-    return data
-
-dataset = generate_arithmetic_problems(
-    max_digits=3,
-    num_terms=2,
-    num_problems=1000,
-)
+# Generate dataset using the new system
+dataset_dict = load_from_disk("arithmetic_dataset")
+dataset = dataset_dict['train']
 
 # reward functions
 def correctness_reward_func(prompts, completions, answer, **kwargs) -> list[float]:
@@ -126,7 +79,7 @@ training_args = GRPOConfig(
     bf16=True,
     per_device_train_batch_size=1,
     gradient_accumulation_steps=4,
-    num_generations=16,
+    num_generations=4,
     max_prompt_length=256,
     max_completion_length=786,
     num_train_epochs=1,
@@ -145,7 +98,7 @@ peft_config = LoraConfig(
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.bfloat16,
-    attn_implementation="flash_attention_2",
+    attn_implementation="sdpa", # For the love of me, I cannot install flash attention
     device_map=None
 ).to("cuda")
         

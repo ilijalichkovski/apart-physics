@@ -102,7 +102,6 @@ training_args = GRPOConfig(
     lr_scheduler_type='cosine',
     logging_steps=1,
     bf16=True,
-    use_liger_loss=True,
     optim="adamw_8bit",
     per_device_train_batch_size=per_device_train_batch_size,
     per_device_eval_batch_size=per_device_train_batch_size,

@@ -65,7 +65,7 @@ def length_penalty_reward_func(completions, **kwargs) -> list[float]:
     Penalizes longer completions by returning a negative reward proportional to the length.
     """
     contents = [completion[0]["content"] for completion in completions]
-    return [-len(c) * 0.01 for c in contents]  # Adjust the factor as needed
+    return [-len(c) * 0.02 for c in contents]  # Adjust the factor as needed
 
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
 model_name = "unsloth/Qwen3-0.6B"
@@ -79,16 +79,15 @@ wandb.init(
     
 training_args = GRPOConfig(
     output_dir=output_dir,
-    learning_rate=1e-6,
+    learning_rate=1e-5,
     weight_decay = 0.1,
-    warmup_ratio = 0.1,
+    warmup_ratio = 0.05,
     lr_scheduler_type='cosine',
     logging_steps=1,
     bf16=True,
     optim="adamw_8bit",
-    torch_compile=True,
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=8,
+    per_device_train_batch_size=4,
+    per_device_eval_batch_size=4,
     gradient_accumulation_steps=4,
     num_generations=4,
     max_prompt_length=128,
@@ -97,13 +96,14 @@ training_args = GRPOConfig(
     max_grad_norm=0.1,
     report_to="wandb",
     log_on_each_node=False,
-    eval_steps=100,
+    do_eval=True,
+    eval_steps=13,
 )
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.bfloat16,
-    attn_implementation="sdpa", # For the love of me, I cannot install flash attention
+    attn_implementation="flash_attention_2",
     device_map="auto",    
 )
         

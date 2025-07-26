@@ -14,6 +14,7 @@ Respond ONLY with the answer to the question in the following format:
 <answer>
 ...
 </answer>
+Don't overthink it.
 """
 
 def generate_single_problem(operation: str, num_digits: int, num_terms: int) -> Tuple[str, str]:
@@ -165,7 +166,7 @@ def generate_full_dataset(
     })
     
     # Split dataset randomly
-    dataset = dataset.shuffle(seed=42)
+    # dataset = dataset.shuffle(seed=42)
     total_size = len(dataset)
     train_size = int(total_size * train_split)
     
@@ -233,7 +234,7 @@ if __name__ == "__main__":
     
     # Generate the complete dataset
     dataset = generate_full_dataset(
-        operations=['+', '-'],  # Only addition and subtraction for now
+        operations=['+'],  # Only addition for now
         digit_ranges=digit_ranges,
         term_ranges=term_ranges,
         problems_per_case=50,
@@ -249,7 +250,7 @@ if __name__ == "__main__":
     
     # Print some statistics
     print("\nDataset Statistics:")
-    print(f"Total combinations: {len(['+', '-']) * len(digit_ranges) * len(term_ranges)}")
+    print(f"Total combinations: {len(['+']) * len(digit_ranges) * len(term_ranges)}")
     print(f"Problems per case: 50")
     total_problems = len(dataset['train'])
     if 'validation' in dataset:

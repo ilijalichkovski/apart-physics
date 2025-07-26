@@ -101,7 +101,6 @@ training_args = GRPOConfig(
     warmup_ratio = 0.05,
     lr_scheduler_type='cosine',
     logging_steps=1,
-    bf16=True,
     optim="adamw_8bit",
     per_device_train_batch_size=per_device_train_batch_size,
     per_device_eval_batch_size=per_device_train_batch_size,
@@ -112,6 +111,7 @@ training_args = GRPOConfig(
     num_train_epochs=1,
     report_to="wandb",
     log_on_each_node=False,
+    max_grad_norm=1.0,
     eval_strategy="steps",
     eval_steps=eval_steps,
 )

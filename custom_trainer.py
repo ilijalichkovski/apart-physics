@@ -121,62 +121,6 @@ class CustomGRPOTrainer(GRPOTrainer):
         try:
             output_metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
             output_metrics["eval_generations_used"] = eval_generations
-
-            # ------------------------------------------------------------------ #
-            # Local Learning Coefficient (LLC) Calculation using devinterp       #
-            # ------------------------------------------------------------------ #
-            # LLC measures the complexity of the loss landscape around a model's #
-            # parameters. It is a key metric from Singular Learning Theory (SLT) #
-            # that can provide insights into model generalization and phase      #
-            # transitions during training.                                       #
-            # ------------------------------------------------------------------ #
-            print("\n--- Starting LLC calculation for SLT ---")
-            
-            # We need to get the "unwrapped" model if using PEFT or other wrappers
-            model_to_eval = self.accelerator.unwrap_model(self.model)
-
-            # Create a DataLoader specifically for LLC calculation
-            llc_loader = DataLoader(
-                eval_dataset,
-                batch_size=self.args.per_device_eval_batch_size,
-                collate_fn=self.llc_data_collator,
-                shuffle=False
-            )
-
-            # Define sampling method and its arguments for SGLD
-            sampling_method_kwargs = {
-                "lr": 5e-6,
-                "nbeta": default_nbeta(llc_loader),
-                "localization": 100.0,
-            }
-            
-            llc_results = estimate_learning_coeff_with_summary(
-                model=model_to_eval,
-                loader=llc_loader,
-                evaluate=evaluate_llc,
-                sampling_method=SGMCMC.sgld,
-                optimizer_kwargs=sampling_method_kwargs,
-                num_chains=2,         # A small number for speed during evaluation
-                num_draws=100,        # Number of samples to draw per chain
-                num_steps_bw_draws=1,
-                cores=1,              # Avoid multiprocessing issues inside the trainer
-                device=model_to_eval.device,
-                verbose=True,
-            )
-            
-            print("--- LLC calculation finished ---")
-            print(f"LLC results: {llc_results}")
-            
-            # Log results to wandb and trainer state
-            if self.state.is_world_process_zero and wandb.run:
-                # Filter for wandb-loggable types and add prefix
-                wandb_llc_results = {f"{metric_key_prefix}/llc/{k.replace('/', '_')}": v for k, v in llc_results.items() if isinstance(v, (int, float, np.number))}
-                self.log(wandb_llc_results) # Use self.log to push to wandb
-                # Also add to output_metrics to be returned by evaluate()
-                output_metrics.update(wandb_llc_results)
-            # ------------------------------------------------------------------ #
-            # End of LLC Calculation                                             #
-            # ------------------------------------------------------------------ #
         except Exception as e:
             print(f"Error during evaluation: {e}")
                 

@@ -18,7 +18,7 @@ def on_log(self, args, state, control, logs=None, **kwargs):
 ProgressCallback.on_log = on_log
 
 # Load dataset using the new system
-dataset_dict = load_from_disk("puzzle_dataset")
+dataset_dict = load_from_disk("arithmetic_dataset")
 train_dataset = dataset_dict['train']
 val_dataset = dataset_dict['validation']
 
@@ -66,7 +66,7 @@ def length_penalty_reward_func(completions, **kwargs) -> list[float]:
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
 model_name = "unsloth/Qwen3-0.6B"
 
-output_dir="outputs/puzzle-grpo"
+output_dir="outputs/arithmetic-grpo"
 
 wandb.init(
     project="apart-physics",
@@ -83,16 +83,16 @@ num_generations = 4
 train_dataset_size = len(train_dataset)
 effective_batch_size = per_device_train_batch_size * gradient_accumulation_steps
 steps_per_epoch = (train_dataset_size * num_generations) // effective_batch_size
-eval_steps = max(1, steps_per_epoch // 5)  # Evaluate at ~20% intervals
+eval_steps = max(1, steps_per_epoch // 10)  # Evaluate at ~10% intervals
 
 print(f"Training dataset size: {train_dataset_size}")
 print(f"Effective batch size: {effective_batch_size}")  
 print(f"Steps per epoch: {steps_per_epoch}")
-print(f"Eval steps (20% intervals): {eval_steps}")
+print(f"Eval steps (10% intervals): {eval_steps}")
     
 training_args = GRPOConfig(
     output_dir=output_dir,
-    learning_rate=5e-6,
+    learning_rate=8e-6,
     weight_decay = 0.1,
     warmup_ratio = 0.05,
     lr_scheduler_type='cosine',
@@ -108,7 +108,7 @@ training_args = GRPOConfig(
     num_train_epochs=1,
     report_to="wandb",
     log_on_each_node=False,
-    max_grad_norm=1.0,
+    max_grad_norm=10.0,
     eval_strategy="steps",
     eval_steps=eval_steps,
     save_strategy="steps",
@@ -139,5 +139,5 @@ trainer = CustomGRPOTrainer(
     eval_dataset=[val_dataset[0]],
 )
 
-trainer.evaluate()
+# trainer.evaluate()
 trainer.train()

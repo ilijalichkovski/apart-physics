@@ -61,7 +61,7 @@ def length_penalty_reward_func(completions, **kwargs) -> list[float]:
     Penalizes longer completions by returning a negative reward proportional to the length.
     """
     contents = [completion[0]["content"] for completion in completions]
-    return [-len(c) * 0.001 for c in contents]  # Adjust the factor as needed
+    return [-len(c) * 0.002 for c in contents]  # Adjust the factor as needed
 
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
 model_name = "unsloth/Qwen3-0.6B"

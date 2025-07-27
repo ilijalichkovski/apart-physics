@@ -7,7 +7,8 @@ import torch
 from datasets import load_dataset, Dataset, load_from_disk
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig
-from trl import GRPOConfig, GRPOTrainer
+from trl import GRPOConfig
+from custom_trainer import CustomGRPOTrainer, extract_xml_answer
 import wandb
 
 from transformers.trainer_callback import ProgressCallback
@@ -15,11 +16,6 @@ def on_log(self, args, state, control, logs=None, **kwargs):
     if state.is_local_process_zero and self.training_bar is not None:
         _ = logs.pop("total_flos", None)
 ProgressCallback.on_log = on_log
-
-def extract_xml_answer(text: str) -> str:
-    answer = text.split("<answer>")[-1]
-    answer = answer.split("</answer>")[0]
-    return answer.strip()
 
 # Load dataset using the new system
 dataset_dict = load_from_disk("arithmetic_dataset")
@@ -65,7 +61,7 @@ def length_penalty_reward_func(completions, **kwargs) -> list[float]:
     Penalizes longer completions by returning a negative reward proportional to the length.
     """
     contents = [completion[0]["content"] for completion in completions]
-    return [-len(c) * 0.002 for c in contents]  # Adjust the factor as needed
+    return [-len(c) * 0.001 for c in contents]  # Adjust the factor as needed
 
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
 model_name = "unsloth/Qwen3-0.6B"
@@ -96,7 +92,7 @@ print(f"Eval steps (20% intervals): {eval_steps}")
     
 training_args = GRPOConfig(
     output_dir=output_dir,
-    learning_rate=1e-5,
+    learning_rate=1e-6,
     weight_decay = 0.1,
     warmup_ratio = 0.05,
     lr_scheduler_type='cosine',
@@ -126,7 +122,7 @@ model = AutoModelForCausalLM.from_pretrained(
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 
-trainer = GRPOTrainer(
+trainer = CustomGRPOTrainer(
     model=model,
     processing_class=tokenizer,
     reward_funcs=[
@@ -140,5 +136,5 @@ trainer = GRPOTrainer(
     eval_dataset=val_dataset,
 )
 
-#trainer.evaluate()
+# trainer.evaluate()
 trainer.train()

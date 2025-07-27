@@ -28,7 +28,7 @@ def correctness_reward_func(prompts, completions, answer, **kwargs) -> list[floa
     q = prompts[0][-1]['content']
     extracted_responses = [extract_xml_answer(r) for r in responses]
     print('-'*20, f"\nQuestion:\n{q}", f"\nAnswer:\n{answer[0]}", f"\nResponse:\n{responses[0]}", f"\nExtracted:\n{extracted_responses[0]}")
-    return [2.0 if r == a else 0.0 for r, a in zip(extracted_responses, answer)]
+    return [5.0 if r == a else 0.0 for r, a in zip(extracted_responses, answer)]
 
 def numeric_reward_func(completions, **kwargs) -> list[float]:
     responses = [completion[0]['content'] for completion in completions]
@@ -105,7 +105,7 @@ training_args = GRPOConfig(
     max_prompt_length=128,
     loss_type="dr_grpo",
     max_completion_length=512,
-    num_train_epochs=1,
+    num_train_epochs=2,
     report_to="wandb",
     log_on_each_node=False,
     max_grad_norm=10.0,

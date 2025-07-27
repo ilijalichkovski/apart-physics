@@ -188,13 +188,34 @@ class CustomGRPOTrainer(GRPOTrainer):
                 
                 extracted_answers = [extract_xml_answer(c) for c in completions_text]
 
+                # Detect dataset type by checking available fields
+                if len(self.eval_dataset_for_metrics) > 0:
+                    sample_item = self.eval_dataset_for_metrics[0]
+                    is_arithmetic_dataset = 'operation' in sample_item and 'num_digits' in sample_item and 'num_terms' in sample_item
+                    is_puzzle_dataset = 'num_symbols' in sample_item and 'num_operations' in sample_item
+                else:
+                    is_arithmetic_dataset = False
+                    is_puzzle_dataset = False
+
                 for i in range(num_prompts_to_score):
                     eval_example = self.eval_dataset_for_metrics[i]
                     true_answer = str(eval_example['answer'])
-                    op = eval_example['operation']
-                    digits = eval_example['num_digits']
-                    terms = eval_example['num_terms']
-                    condition_key = f"{op}_{digits}d_{terms}t"
+                    
+                    # Create condition key based on dataset type
+                    if is_arithmetic_dataset:
+                        op = eval_example['operation']
+                        digits = eval_example['num_digits']
+                        terms = eval_example['num_terms']
+                        condition_key = f"{op}_{digits}d_{terms}t"
+                    elif is_puzzle_dataset:
+                        symbols = eval_example['num_symbols']
+                        operations = eval_example['num_operations']
+                        modifiers = eval_example.get('num_modifiers', 0)
+                        target_ops = eval_example.get('target_ops_count', 0)
+                        condition_key = f"puzzle_{symbols}s_{operations}o_{modifiers}m_{target_ops}t"
+                    else:
+                        # Fallback for unknown dataset types
+                        condition_key = "unknown"
 
                     prompt_answers = extracted_answers[i*k : (i+1)*k]
                     

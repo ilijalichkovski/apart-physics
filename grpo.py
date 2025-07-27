@@ -143,21 +143,23 @@ training_args = GRPOConfig(
     max_prompt_length=128,
     loss_type="dr_grpo",
     max_completion_length=512,
-    num_train_epochs=10,
+    num_train_epochs=5,
     report_to="wandb",
     log_on_each_node=False,
-    max_grad_norm=10.0,
+    max_grad_norm=4.0,
     eval_strategy="steps",
     eval_steps=eval_steps,
     save_strategy="steps",
     save_steps=eval_steps, # so this requires around 12 GB of memory
     use_vllm=True,
     vllm_mode="colocate",
-    # Best thinking mode parameters (do not use greedy as it can lead to repetition!)
-    temperature=0.6,
-    top_p=0.95,
-    top_k=20,
-    min_p=0.0,
+    # Improved sampling parameters to prevent repetition
+    temperature=0.8,  # Slightly higher for more diversity
+    top_p=0.9,        # Slightly lower for more focused sampling
+    top_k=40,         # Increased for more options
+    min_p=0.02,       # Slightly higher minimum probability
+    # Add repetition penalty to prevent stuck patterns
+    repetition_penalty=1.1,
 )
 
 model = AutoModelForCausalLM.from_pretrained(
@@ -169,6 +171,10 @@ model = AutoModelForCausalLM.from_pretrained(
         
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
+
+# Update training args with proper token IDs
+training_args.eos_token_id = tokenizer.eos_token_id
+training_args.pad_token_id = tokenizer.pad_token_id
 
 trainer = CustomGRPOTrainer(
     model=model,

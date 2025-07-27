@@ -202,8 +202,8 @@ def main():
         lr = 1e-5
         gamma = 100.0
         nbeta = default_nbeta(loader)
-        num_draws = 10
-        num_burnin_steps = 10
+        num_draws = 200
+        num_burnin_steps = 200
         num_chains = 2
         print(f"Defaults: lr={lr}, gamma={gamma}, nbeta={nbeta:.2f}, num_draws={num_draws}, burn-in={num_burnin_steps}, num_chains={num_chains}")
 

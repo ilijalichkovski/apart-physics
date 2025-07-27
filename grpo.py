@@ -26,7 +26,7 @@ def on_log(self, args, state, control, logs=None, **kwargs):
 ProgressCallback.on_log = on_log
 
 # Load dataset using the new system
-dataset_dict = load_from_disk("arithmetic_dataset")
+dataset_dict = load_from_disk("puzzle_dataset")
 train_dataset = dataset_dict['train']
 val_dataset = dataset_dict['validation']
 
@@ -38,16 +38,51 @@ def correctness_reward_func(prompts, completions, answer, **kwargs) -> list[floa
     print('-'*20, f"\nQuestion:\n{q}", f"\nAnswer:\n{answer[0]}", f"\nResponse:\n{responses[0]}", f"\nExtracted:\n{extracted_responses[0]}")
     return [2.0 if r == a else 0.0 for r, a in zip(extracted_responses, answer)]
 
-def numeric_reward_func(completions, **kwargs) -> list[float]:
+def right_string_length_reward_func(completions, answer, **kwargs) -> list[float]:
+    """
+    Rewards if the extracted answer has the same length as the target answer.
+    """
     responses = [completion[0]['content'] for completion in completions]
     extracted_responses = [extract_xml_answer(r) for r in responses]
-    def is_numeric(s):
-        try:
-            float(s)
-            return True
-        except ValueError:
-            return False
-    return [0.5 if is_numeric(r) else 0.0 for r in extracted_responses]
+    return [0.5 if len(r) == len(a) else 0.0 for r, a in zip(extracted_responses, answer)]
+
+def longest_common_subsequence(s1, s2):
+    """
+    Calculate the length of the longest common subsequence between two strings.
+    """
+    m, n = len(s1), len(s2)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if s1[i-1] == s2[j-1]:
+                dp[i][j] = dp[i-1][j-1] + 1
+            else:
+                dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+    
+    return dp[m][n]
+
+def lcs_reward_func(completions, answer, **kwargs) -> list[float]:
+    """
+    Rewards based on the longest common subsequence similarity between predicted and target answer.
+    This is the most important reward function for the puzzle dataset.
+    """
+    responses = [completion[0]['content'] for completion in completions]
+    extracted_responses = [extract_xml_answer(r) for r in responses]
+    
+    rewards = []
+    for r, a in zip(extracted_responses, answer):
+        if len(r) == 0 or len(a) == 0:
+            rewards.append(0.0)
+        else:
+            lcs_length = longest_common_subsequence(r, a)
+            # Normalize by the maximum possible LCS length
+            max_length = max(len(r), len(a))
+            similarity = lcs_length / max_length
+            # Scale the reward (1.0 max for perfect LCS match)
+            rewards.append(similarity * 1.0)
+    
+    return rewards
 
 def count_xml(text) -> float:
     count = 0.0
@@ -63,18 +98,11 @@ def xmlcount_reward_func(completions, **kwargs) -> list[float]:
     contents = [completion[0]["content"] for completion in completions]
     return [count_xml(c) for c in contents]
 
-# Create reward function to penalize longer completions
-def length_penalty_reward_func(completions, **kwargs) -> list[float]:
-    """
-    Penalizes longer completions by returning a negative reward proportional to the length.
-    """
-    contents = [completion[0]["content"] for completion in completions]
-    return [-len(c) * 0.002 for c in contents]  # Adjust the factor as needed
-
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
-model_name = "unsloth/Qwen3-0.6B"
+#model_name = "unsloth/Qwen3-0.6B"
+model_name = "Qwen/Qwen2.5-1.5B-Instruct"
 
-output_dir="outputs/arithmetic-grpo"
+output_dir="../../workspace/outputs/puzzle-grpo"
 
 wandb.init(
     project="apart-physics",
@@ -113,7 +141,7 @@ training_args = GRPOConfig(
     max_prompt_length=128,
     loss_type="dr_grpo",
     max_completion_length=512,
-    num_train_epochs=1,
+    num_train_epochs=10,
     report_to="wandb",
     log_on_each_node=False,
     max_grad_norm=10.0,
@@ -123,12 +151,17 @@ training_args = GRPOConfig(
     save_steps=eval_steps, # so this requires around 12 GB of memory
     use_vllm=True,
     vllm_mode="colocate",
+    # Best thinking mode parameters (do not use greedy as it can lead to repetition!)
+    temperature=0.6,
+    top_p=0.95,
+    top_k=20,
+    min_p=0.0,
 )
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.bfloat16,
-    #attn_implementation="flash_attention_2",
+    attn_implementation="flash_attention_2",
     device_map="auto",    
 )
         
@@ -141,8 +174,8 @@ trainer = CustomGRPOTrainer(
     reward_funcs=[
         correctness_reward_func,
         xmlcount_reward_func,
-        numeric_reward_func,
-        length_penalty_reward_func
+        right_string_length_reward_func,
+        lcs_reward_func,
     ],
     args=training_args,
     train_dataset=train_dataset,

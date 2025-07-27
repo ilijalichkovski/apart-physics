@@ -6,6 +6,10 @@ from trl import GRPOTrainer
 from typing import Optional, Any, Union, Dict, List
 from torch.utils.data import DataLoader
 from datasets import Dataset
+from collections import deque
+
+from trl.trainer.grpo_trainer import RepeatSampler
+from torch.utils.data import SequentialSampler
 
 
 def extract_xml_answer(text: str) -> str:
@@ -27,14 +31,6 @@ def extract_xml_answer(text: str) -> str:
     return "" # Return empty string if no answer found
 
 class CustomGRPOTrainer(GRPOTrainer):
-    """
-    A custom GRPOTrainer that provides an option for fast single-generation
-    evaluation by correctly orchestrating the trainer's internal state.
-    
-    Args:
-        fast_eval (bool): If True, evaluation will use only 1 generation for speed.
-                          If False, it will use the training `num_generations`.
-    """
     def __init__(self, *args, fast_eval: bool = True, **kwargs):
         self.fast_eval = fast_eval
         self.eval_dataset_for_metrics = kwargs.get('eval_dataset')
@@ -46,40 +42,76 @@ class CustomGRPOTrainer(GRPOTrainer):
         ignore_keys: Optional[List[str]] = None,
         metric_key_prefix: str = "eval",
     ) -> Dict[str, float]:
-        """
-        Overrides the main evaluation method to temporarily set num_generations to 1
-        if `fast_eval` is True. This ensures that all internal logic, from the
-        sampler to the reward reshaping, is in sync.
-        """
-        # --- Store original state and temporarily modify it for evaluation ---
+        
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+        num_samples = len(eval_dataset)
+
+        # The log container is a deque with maxlen=generation_batch_size (16).
+        # We must resize it to hold all evaluation samples.
+        log_attr_name = '_textual_logs' if hasattr(self, '_textual_logs') else '_logs'
+        log_container = getattr(self, log_attr_name)
+        
+        # Re-initialize the deques with a new, larger maxlen
+        for key in log_container:
+            if isinstance(log_container[key], defaultdict):
+                log_container[key] = defaultdict(lambda: deque(maxlen=num_samples))
+            else:
+                log_container[key] = deque(maxlen=num_samples)
+        
+        print(f"--- Resized log container to hold {num_samples} evaluation samples. ---")
+
+        # --- The rest of the state management logic from before ---
         original_num_generations = self.num_generations
-        # This variable will hold the number of generations used in this specific run
         eval_generations = original_num_generations
         
         if self.fast_eval:
             self.num_generations = 1
             eval_generations = 1
-            print(f"--- Starting fast evaluation with num_generations = {self.num_generations} ---")
-        else:
-            print(f"--- Starting full evaluation with num_generations = {self.num_generations} ---")
-
-        # We use a try...finally block to ensure the original value is always restored.
+        
         try:
-            # Call the parent's evaluate method. It will now use the modified
-            # self.num_generations (if fast_eval=True) for ALL its internal
-            # operations, including creating the sampler and reshaping rewards.
-            output = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
-            
-            # Pass the number of generations used to the logs for our custom metric calculation
-            output["eval_generations_used"] = eval_generations
-
+            output_metrics = super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
+            output_metrics["eval_generations_used"] = eval_generations
         finally:
-            # Restore the original value for subsequent training steps
-            if self.fast_eval:
-                print(f"--- Restoring num_generations to {original_num_generations} for training ---")
-                self.num_generations = original_num_generations
+            self.num_generations = original_num_generations
             
-        return output
+        return output_metrics
+    
+    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
+        """
+        Overrides the dataloader creation to guarantee a sequential, non-shuffled
+        order, which is critical for calculating metrics correctly.
+        """
+        if eval_dataset is None:
+            eval_dataset = self.eval_dataset
+        
+        # Determine k and choose the sampler.
+        if self.fast_eval:
+            k = 1
+            # For fast eval, a standard SequentialSampler is perfect. It is, by
+            # definition, ordered and not shuffled.
+            sampler = SequentialSampler(eval_dataset)
+            batch_size = self.args.per_device_eval_batch_size
+        else:
+            k = self.args.num_generations
+            # For full eval, we use the RepeatSampler but crucially pass `shuffle=False`.
+            sampler = RepeatSampler(
+                data_source=eval_dataset,
+                mini_repeat_count=k,
+                batch_size=self.args.per_device_eval_batch_size,
+                repeat_count=1,
+                shuffle=False
+            )
+            batch_size = self.args.per_device_eval_batch_size * k
+            
+        return DataLoader(
+            eval_dataset,
+            sampler=sampler,
+            batch_size=batch_size,
+            collate_fn=self.data_collator,
+            drop_last=False,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
 
     def log(self, logs: Dict[str, float], start_time=None) -> None:
         """

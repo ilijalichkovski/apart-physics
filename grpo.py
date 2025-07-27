@@ -136,5 +136,5 @@ trainer = CustomGRPOTrainer(
     eval_dataset=val_dataset,
 )
 
-# trainer.evaluate()
+trainer.evaluate()
 trainer.train()

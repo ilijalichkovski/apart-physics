@@ -3,6 +3,7 @@ adapted from will brown's grpo demo: https://gist.github.com/willccbb/4676755236
 """
 
 import re
+import os
 import torch
 from datasets import load_dataset, Dataset, load_from_disk
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -10,6 +11,13 @@ from peft import LoraConfig
 from trl import GRPOConfig
 from custom_trainer import CustomGRPOTrainer, extract_xml_answer
 import wandb
+
+# Set required environment variables for single-node vLLM execution
+os.environ.setdefault("RANK", "0")
+os.environ.setdefault("LOCAL_RANK", "0")
+os.environ.setdefault("WORLD_SIZE", "1")
+os.environ.setdefault("MASTER_ADDR", "localhost")
+os.environ.setdefault("MASTER_PORT", "29500")
 
 from transformers.trainer_callback import ProgressCallback
 def on_log(self, args, state, control, logs=None, **kwargs):
@@ -113,12 +121,14 @@ training_args = GRPOConfig(
     eval_steps=eval_steps,
     save_strategy="steps",
     save_steps=eval_steps, # so this requires around 12 GB of memory
+    use_vllm=True,
+    vllm_mode="colocate",
 )
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.bfloat16,
-    attn_implementation="flash_attention_2",
+    #attn_implementation="flash_attention_2",
     device_map="auto",    
 )
         

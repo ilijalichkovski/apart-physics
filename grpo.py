@@ -46,25 +46,27 @@ def right_string_length_reward_func(completions, answer, **kwargs) -> list[float
     extracted_responses = [extract_xml_answer(r) for r in responses]
     return [0.5 if len(r) == len(a) else 0.0 for r, a in zip(extracted_responses, answer)]
 
-def longest_common_subsequence(s1, s2):
+def longest_common_substring(s1, s2):
     """
-    Calculate the length of the longest common subsequence between two strings.
+    Calculate the length of the longest common substring between two strings.
     """
     m, n = len(s1), len(s2)
     dp = [[0] * (n + 1) for _ in range(m + 1)]
+    max_length = 0
     
     for i in range(1, m + 1):
         for j in range(1, n + 1):
             if s1[i-1] == s2[j-1]:
                 dp[i][j] = dp[i-1][j-1] + 1
+                max_length = max(max_length, dp[i][j])
             else:
-                dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+                dp[i][j] = 0
     
-    return dp[m][n]
+    return max_length
 
 def lcs_reward_func(completions, answer, **kwargs) -> list[float]:
     """
-    Rewards based on the longest common subsequence similarity between predicted and target answer.
+    Rewards based on the longest common substring similarity between predicted and target answer.
     This is the most important reward function for the puzzle dataset.
     """
     responses = [completion[0]['content'] for completion in completions]
@@ -75,11 +77,11 @@ def lcs_reward_func(completions, answer, **kwargs) -> list[float]:
         if len(r) == 0 or len(a) == 0:
             rewards.append(0.0)
         else:
-            lcs_length = longest_common_subsequence(r, a)
-            # Normalize by the maximum possible LCS length
+            lcstr_length = longest_common_substring(r, a)
+            # Normalize by the maximum possible substring length
             max_length = max(len(r), len(a))
-            similarity = lcs_length / max_length
-            # Scale the reward (1.0 max for perfect LCS match)
+            similarity = lcstr_length / max_length
+            # Scale the reward (1.0 max for perfect substring match)
             rewards.append(similarity * 1.0)
     
     return rewards

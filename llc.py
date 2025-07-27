@@ -4,11 +4,15 @@ import torch
 from torch.utils.data import DataLoader
 from datasets import load_from_disk
 import numpy as np
+import matplotlib.pyplot as plt
 
 from devinterp.optim.sgld import SGLD
 from devinterp.slt.sampler import estimate_learning_coeff_with_summary
 from devinterp.utils import evaluate_ce
 from devinterp.vis_utils import EpsilonBetaAnalyzer
+from devinterp.utils import plot_trace
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def estimate_llc_given_model(
@@ -45,17 +49,56 @@ def estimate_llc_given_model(
     sweep_stats["llc/trace"] = np.array(sweep_stats["llc/trace"])
     return sweep_stats
 
-if __name__ == "__main__":
+def tune_llc(all_checkpointed_models, train_dataset):
+    """
+    Choosing the LLC hyperparameters for the given model checkpoints and dataset.
+    """
+    
+    print("Tuning LLC hyperparameters...")
+    while True:
 
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        lr = float(input("Enter the learning rate: "))
+        gamma = int(input("Enter the gamma: "))
+        nbeta = float(input("Enter the nbeta: "))
+        num_draws = int(input("Enter the number of draws: "))
+        num_chains = int(input("Enter the number of chains: "))
 
+        learning_coeff_stats = estimate_learning_coeff_with_summary(
+            all_checkpointed_models[-1],
+            loader=DataLoader(train_dataset, batch_size=256, shuffle=True),
+            evaluate=evaluate_ce,
+            sampling_method=SGLD,
+            optimizer_kwargs=dict(lr=lr, nbeta=nbeta, localization=gamma),
+            num_chains=num_chains,
+            num_draws=num_draws,
+            device=DEVICE,
+            online=True,
+        )
+        trace = learning_coeff_stats["loss/trace"]
+
+        plot_trace(
+            trace,
+            "Loss",
+            x_axis="Step",
+            title=f"Loss Trace, avg LLC = {sum(learning_coeff_stats['llc/means']) / len(learning_coeff_stats['llc/means']):.2f}",
+            plot_mean=False,
+            plot_std=False,
+            fig_size=(12, 9),
+            true_lc=None,
+        )
+
+        if input("Are you happy with the results? (y/n): ") == "y":
+            break
+    return lr, gamma, nbeta, num_draws, num_chains
+
+def main():
     all_checkpointed_models = [torch.load(f"models/model_{i}.pt") for i in range(100)]
 
     dataset_dict = load_from_disk("arithmetic_dataset")
     train_dataset = dataset_dict['train']
     val_dataset = dataset_dict['validation']
 
-    loader = DataLoader(train_dataset, shuffle=True, batch_size=128)
+    loader = DataLoader(train_dataset, shuffle=True, batch_size=256)
     analyzer = EpsilonBetaAnalyzer()
     analyzer.configure_sweep(
         llc_estimator=estimate_llc_given_model,
@@ -74,3 +117,34 @@ if __name__ == "__main__":
         dataloader=loader,
     )
     analyzer.sweep()
+
+    analyzer.plot()
+
+    lr, gamma, nbeta, num_draws, num_chains = tune_llc(all_checkpointed_models, train_dataset)
+
+    print("Hyperparameter tuning complete; starting full LLC estimation")
+
+    llcs = [
+        estimate_learning_coeff_with_summary(
+            model_checkpoint,
+            loader=DataLoader(train_dataset, batch_size=256, shuffle=True),
+            evaluate=evaluate_ce,
+            sampling_method=SGLD,
+            optimizer_kwargs=dict(lr=lr, nbeta=nbeta, localization=gamma),
+            num_chains=1,
+            num_draws=num_draws,
+            device=DEVICE,
+            online=False,
+        )
+        for model_checkpoint in all_checkpointed_models
+    ]
+
+    llc_means = [llc["llc/mean"] for llc in llcs]
+    llc_stds = [llc["llc/std"] for llc in llcs]
+
+    plt.plot(llc_means)
+    plt.plot(llc_stds)
+    plt.show()
+
+if __name__ == "__main__":
+    main()

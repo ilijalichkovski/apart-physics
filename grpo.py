@@ -103,6 +103,7 @@ training_args = GRPOConfig(
     gradient_accumulation_steps=gradient_accumulation_steps,
     num_generations=num_generations,
     max_prompt_length=128,
+    loss_type="dr_grpo",
     max_completion_length=512,
     num_train_epochs=1,
     report_to="wandb",
@@ -110,6 +111,8 @@ training_args = GRPOConfig(
     max_grad_norm=1.0,
     eval_strategy="steps",
     eval_steps=eval_steps,
+    save_strategy="steps",
+    save_steps=eval_steps, # so this requires around 12 GB of memory
 )
 
 model = AutoModelForCausalLM.from_pretrained(

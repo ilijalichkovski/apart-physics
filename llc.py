@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from datasets import load_from_disk
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 from devinterp.optim.sgld import SGLD
 from devinterp.slt.sampler import estimate_learning_coeff_with_summary
@@ -92,7 +93,10 @@ def tune_llc(all_checkpointed_models, train_dataset):
     return lr, gamma, nbeta, num_draws, num_chains
 
 def main():
-    all_checkpointed_models = [torch.load(f"models/model_{i}.pt") for i in range(100)]
+    
+    output_dir = "outputs/arithmetic-grpo"
+    models_list = os.listdir(output_dir)
+    all_checkpointed_models = [torch.load(f"{output_dir}/{model}") for model in models_list]
 
     dataset_dict = load_from_disk("arithmetic_dataset")
     train_dataset = dataset_dict['train']

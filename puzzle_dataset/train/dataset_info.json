@@ -1,0 +1,49 @@
+{
+  "citation": "",
+  "description": "",
+  "features": {
+    "problem": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "answer": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "num_symbols": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "num_operations": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "num_modifiers": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "target_ops_count": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "string_length": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "prompt": {
+      "feature": {
+        "content": {
+          "dtype": "string",
+          "_type": "Value"
+        },
+        "role": {
+          "dtype": "string",
+          "_type": "Value"
+        }
+      },
+      "_type": "List"
+    }
+  },
+  "homepage": "",
+  "license": ""
+}

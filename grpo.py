@@ -18,7 +18,7 @@ def on_log(self, args, state, control, logs=None, **kwargs):
 ProgressCallback.on_log = on_log
 
 # Load dataset using the new system
-dataset_dict = load_from_disk("arithmetic_dataset")
+dataset_dict = load_from_disk("puzzle_dataset")
 train_dataset = dataset_dict['train']
 val_dataset = dataset_dict['validation']
 
@@ -66,7 +66,7 @@ def length_penalty_reward_func(completions, **kwargs) -> list[float]:
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
 model_name = "unsloth/Qwen3-0.6B"
 
-output_dir="outputs/arithmetic-grpo"
+output_dir="outputs/puzzle-grpo"
 
 wandb.init(
     project="apart-physics",
@@ -103,6 +103,7 @@ training_args = GRPOConfig(
     gradient_accumulation_steps=gradient_accumulation_steps,
     num_generations=num_generations,
     max_prompt_length=128,
+    loss_type="dr_grpo",
     max_completion_length=512,
     num_train_epochs=1,
     report_to="wandb",
@@ -110,6 +111,8 @@ training_args = GRPOConfig(
     max_grad_norm=1.0,
     eval_strategy="steps",
     eval_steps=eval_steps,
+    save_strategy="steps",
+    save_steps=eval_steps, # so this requires around 12 GB of memory
 )
 
 model = AutoModelForCausalLM.from_pretrained(

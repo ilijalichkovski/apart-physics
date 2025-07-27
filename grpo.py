@@ -92,7 +92,7 @@ print(f"Eval steps (20% intervals): {eval_steps}")
     
 training_args = GRPOConfig(
     output_dir=output_dir,
-    learning_rate=1e-6,
+    learning_rate=5e-6,
     weight_decay = 0.1,
     warmup_ratio = 0.05,
     lr_scheduler_type='cosine',
@@ -133,7 +133,7 @@ trainer = CustomGRPOTrainer(
     ],
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=val_dataset,
+    eval_dataset=[val_dataset[0]],
 )
 
 trainer.evaluate()

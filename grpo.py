@@ -130,12 +130,12 @@ print(f"Eval steps (10% intervals): {eval_steps}")
     
 training_args = GRPOConfig(
     output_dir=output_dir,
-    learning_rate=8e-6,
+    learning_rate=5e-6,
     weight_decay = 0.1,
     warmup_ratio = 0.05,
     lr_scheduler_type='cosine',
     logging_steps=1,
-    optim="adamw_8bit",
+    optim="adamw_torch",
     per_device_train_batch_size=per_device_train_batch_size,
     per_device_eval_batch_size=per_device_train_batch_size,
     gradient_accumulation_steps=gradient_accumulation_steps,
@@ -143,10 +143,10 @@ training_args = GRPOConfig(
     max_prompt_length=128,
     loss_type="dr_grpo",
     max_completion_length=512,
-    num_train_epochs=5,
+    num_train_epochs=1,
     report_to="wandb",
     log_on_each_node=False,
-    max_grad_norm=4.0,
+    max_grad_norm=1.0,
     eval_strategy="steps",
     eval_steps=eval_steps,
     save_strategy="steps",
@@ -168,6 +168,24 @@ model = AutoModelForCausalLM.from_pretrained(
     attn_implementation="flash_attention_2",
     device_map="auto",    
 )
+
+# Correctly cast layernorms and rmsnorms to float32 for stability
+for name, module in model.named_modules():
+    if "norm" in name:
+        # Get the parent module and the name of the child module
+        name_parts = name.split('.')
+        if len(name_parts) > 1:
+            parent_name = ".".join(name_parts[:-1])
+            child_name = name_parts[-1]
+            parent_module = model.get_submodule(parent_name)
+        else:
+            # This handles top-level modules
+            parent_module = model
+            child_name = name
+
+        # Replace the module with its float32 version
+        child_module = getattr(parent_module, child_name)
+        setattr(parent_module, child_name, child_module.to(torch.float32))
         
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token

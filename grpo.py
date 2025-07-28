@@ -127,6 +127,33 @@ def xmlcount_reward_func(completions, **kwargs) -> list[float]:
     contents = [completion[0]["content"] for completion in completions]
     return [count_xml(c) for c in contents]
 
+def length_penalty_reward_func(completions, **kwargs) -> list[float]:
+    """
+    Penalizes longer completions to incentivize concise chain of thought reasoning.
+    Applies a penalty based on the total length of the completion text.
+    """
+    contents = [completion[0]["content"] for completion in completions]
+    
+    rewards = []
+    for content in contents:
+        # Calculate penalty based on length
+        # Target around 200-300 characters for good reasoning
+        target_length = 4*500 #500 tokens times 4 characters per token
+        actual_length = len(content)
+        
+        if actual_length <= target_length:
+            # No penalty for reasonable lengths
+            penalty = 0.0
+        else:
+            # Apply increasing penalty for longer texts
+            excess_length = actual_length - target_length
+            # Penalty scales with excess length, max penalty of -1.0
+            penalty = -min(1.0, excess_length / target_length)
+        
+        rewards.append(penalty)
+    
+    return rewards
+
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
 model_name = "unsloth/Qwen3-0.6B"
 #model_name = "Qwen/Qwen2.5-1.5B-Instruct"
@@ -170,7 +197,7 @@ training_args = GRPOConfig(
     num_generations=num_generations,
     max_prompt_length=128,
     loss_type="dr_grpo",
-    max_completion_length=1536,
+    max_completion_length=1024,
     num_train_epochs=1,
     report_to="wandb",
     log_on_each_node=False,
@@ -213,6 +240,7 @@ trainer = CustomGRPOTrainer(
         xmlcount_reward_func,
         right_string_length_reward_func,
         lcs_reward_func,
+        length_penalty_reward_func,
     ],
     args=training_args,
     train_dataset=train_dataset,

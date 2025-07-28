@@ -33,16 +33,16 @@ val_dataset = dataset_dict['validation']
 new_system_prompt = """
 You are solving a text puzzle with symbolic operations. You will be given definitions that show what symbols represent what strings, and operations that demonstrate how operators act on strings to combine them. Then, you will be asked to solve a target expression.
 
-Analyze the given definitions and operations carefully to understand:
+You will be shown:
 1. What each symbol represents (string values) 
-2. How each operation works on strings
+2. How each operation acts on the operands
+3. The expression of symbols and operations you need to convert to a string
 
-Solve the expression from left to right:
-1. When you see an operation symbol, it means it's acting on the strings to its left and right.
-2. When you see a target expression with many operations, solve it from left to right.
-3. Keep solving left-to-right until you have the final result
+Solve the expression from left to right.
 
-In your chain of thought, be as concise as possible. You only have a couple of hundred tokens to work with.
+Here are two VERY important rules:
+1. In your chain of thought, be as concise as possible. You only have a couple of hundred tokens to work with.
+2. DO NOT pay attention to what the normal meaning of the symbols is. Use only the definitions and examples provided. It may happen that a "+" symbol is present, but it does not necessarily mean addition or concatenation. The provided examples are the only source of truth you should use.
 
 Respond ONLY with the final result string in the following format:
 <answer>

@@ -82,9 +82,9 @@ wandb.init(
 )
 
 # Training configuration
-per_device_train_batch_size = 4
+per_device_train_batch_size = 2
 gradient_accumulation_steps = 4
-num_generations = 4
+num_generations = 2
 
 # Calculate eval_steps based on dataset size and training configuration
 # This ensures evaluation happens at ~10% intervals throughout an epoch

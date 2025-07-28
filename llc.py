@@ -14,6 +14,7 @@ from devinterp.slt.sampler import estimate_learning_coeff_with_summary
 from devinterp.slt.llc import OnlineLLCEstimator
 from devinterp.vis_utils import EpsilonBetaAnalyzer
 from devinterp.utils import plot_trace, default_nbeta
+import pandas as pd
 
 # --- Configuration Flags ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -202,8 +203,8 @@ def main():
         lr = 1e-5
         gamma = 100.0
         nbeta = default_nbeta(loader)
-        num_draws = 200
-        num_burnin_steps = 200
+        num_draws = 100
+        num_burnin_steps = 100
         num_chains = 2
         print(f"Defaults: lr={lr}, gamma={gamma}, nbeta={nbeta:.2f}, num_draws={num_draws}, burn-in={num_burnin_steps}, num_chains={num_chains}")
 
@@ -243,6 +244,10 @@ def main():
     steps = [r["step"] for r in all_results]
     llc_means = [r["llc_mean"] for r in all_results]
     llc_stds = [r["llc_std"] for r in all_results]
+    
+    # Save results to CSV
+    results_df = pd.DataFrame(all_results)
+    results_df.to_csv("llc_results.csv", index=False)
 
     plt.figure(figsize=(12, 7))
     plt.errorbar(steps, llc_means, yerr=llc_stds, fmt='-o', capsize=5, label='LLC (Mean ± Std)')

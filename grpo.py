@@ -8,7 +8,7 @@ import torch
 from datasets import load_dataset, Dataset, load_from_disk
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig
-from trl import GRPOConfig
+from trl import GRPOTrainer,GRPOConfig
 from custom_trainer import CustomGRPOTrainer, extract_xml_answer
 import wandb
 
@@ -30,6 +30,33 @@ dataset_dict = load_from_disk("puzzle_dataset")
 train_dataset = dataset_dict['train']
 val_dataset = dataset_dict['validation']
 
+new_system_prompt = """
+You are solving a text puzzle with symbolic operations. You will be given definitions that show what symbols represent what strings, and operations that demonstrate how operators act on strings to combine them. Then, you will be asked to solve a target expression.
+
+Analyze the given definitions and operations carefully to understand:
+1. What each symbol represents (string values) 
+2. How each operation works on strings
+
+Solve the expression from left to right:
+1. When you see an operation symbol, it means it's acting on the strings to its left and right.
+2. When you see a target expression with many operations, solve it from left to right.
+3. Keep solving left-to-right until you have the final result
+
+In your chain of thought, be as concise as possible. You only have a couple of hundred tokens to work with.
+
+Respond ONLY with the final result string in the following format:
+<answer>
+result_string
+</answer>
+"""
+
+for sample in train_dataset:
+    sample['prompt'][0]['content'] = new_system_prompt
+
+for sample in val_dataset:
+    sample['prompt'][0]['content'] = new_system_prompt
+
+
 # reward functions
 def correctness_reward_func(prompts, completions, answer, **kwargs) -> list[float]:
     responses = [completion[0]['content'] for completion in completions]
@@ -44,7 +71,7 @@ def right_string_length_reward_func(completions, answer, **kwargs) -> list[float
     """
     responses = [completion[0]['content'] for completion in completions]
     extracted_responses = [extract_xml_answer(r) for r in responses]
-    return [0.5 if len(r) == len(a) else 0.0 for r, a in zip(extracted_responses, answer)]
+    return [0.5 if len(r) == len(a) else 0.5 - abs(len(r) - len(a))/len(a) for r, a in zip(extracted_responses, answer)]
 
 def longest_common_substring(s1, s2):
     """
@@ -82,7 +109,7 @@ def lcs_reward_func(completions, answer, **kwargs) -> list[float]:
             max_length = max(len(r), len(a))
             similarity = lcstr_length / max_length
             # Scale the reward (1.0 max for perfect substring match)
-            rewards.append(similarity * 1.0)
+            rewards.append(similarity * 2.0)
     
     return rewards
 
@@ -101,8 +128,9 @@ def xmlcount_reward_func(completions, **kwargs) -> list[float]:
     return [count_xml(c) for c in contents]
 
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
-#model_name = "unsloth/Qwen3-0.6B"
-model_name = "Qwen/Qwen2.5-1.5B-Instruct"
+model_name = "unsloth/Qwen3-0.6B"
+#model_name = "Qwen/Qwen2.5-1.5B-Instruct"
+#model_name = "willcb/Qwen3-0.6B"
 
 output_dir="../../workspace/outputs/puzzle-grpo"
 
@@ -112,9 +140,9 @@ wandb.init(
 )
 
 # Training configuration
-per_device_train_batch_size = 4
+per_device_train_batch_size = 2
 gradient_accumulation_steps = 4
-num_generations = 4
+num_generations = 2
 
 # Calculate eval_steps based on dataset size and training configuration
 # This ensures evaluation happens at ~10% intervals throughout an epoch
@@ -130,9 +158,9 @@ print(f"Eval steps (10% intervals): {eval_steps}")
     
 training_args = GRPOConfig(
     output_dir=output_dir,
-    learning_rate=5e-6,
+    learning_rate=2e-6,  # Reduced learning rate for stability
     weight_decay = 0.1,
-    warmup_ratio = 0.05,
+    warmup_ratio = 0.1,  # Increased warmup for stability
     lr_scheduler_type='cosine',
     logging_steps=1,
     optim="adamw_torch",
@@ -142,11 +170,11 @@ training_args = GRPOConfig(
     num_generations=num_generations,
     max_prompt_length=128,
     loss_type="dr_grpo",
-    max_completion_length=512,
+    max_completion_length=1536,
     num_train_epochs=1,
     report_to="wandb",
     log_on_each_node=False,
-    max_grad_norm=1.0,
+    max_grad_norm=1.0,  # Reduced gradient clipping for stability
     eval_strategy="steps",
     eval_steps=eval_steps,
     save_strategy="steps",
@@ -164,29 +192,12 @@ training_args = GRPOConfig(
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.bfloat16,
-    attn_implementation="flash_attention_2",
-    device_map="auto",    
+    torch_dtype=torch.float32,  # Use full precision to avoid NaNs early in training
+    device_map="auto",
 )
 
-# Correctly cast layernorms and rmsnorms to float32 for stability
-for name, module in model.named_modules():
-    if "norm" in name:
-        # Get the parent module and the name of the child module
-        name_parts = name.split('.')
-        if len(name_parts) > 1:
-            parent_name = ".".join(name_parts[:-1])
-            child_name = name_parts[-1]
-            parent_module = model.get_submodule(parent_name)
-        else:
-            # This handles top-level modules
-            parent_module = model
-            child_name = name
-
-        # Replace the module with its float32 version
-        child_module = getattr(parent_module, child_name)
-        setattr(parent_module, child_name, child_module.to(torch.float32))
-        
+# Flash-attention and manual norm casting removed – these were causing numerical instabilities that pushed the gradients to NaN.
+     
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 

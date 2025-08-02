@@ -11,6 +11,19 @@ from peft import LoraConfig
 from trl import GRPOTrainer,GRPOConfig
 from custom_trainer import CustomGRPOTrainer, extract_xml_answer
 import wandb
+from dotenv import load_dotenv
+from huggingface_hub import login
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Login to Hugging Face using token from environment
+hf_token = os.getenv("HF_TOKEN")
+if hf_token:
+    login(token=hf_token)
+    print("Successfully logged in to Hugging Face")
+else:
+    print("Warning: HF_TOKEN not found in environment variables. Some models may not be accessible.")
 
 # Set required environment variables for single-node vLLM execution
 os.environ.setdefault("RANK", "0")
@@ -31,7 +44,9 @@ train_dataset = dataset_dict['train']
 val_dataset = dataset_dict['validation']
 
 new_system_prompt = """
-You are solving a text puzzle with symbolic operations. You will be given definitions that show what symbols represent what strings, and operations that demonstrate how operators act on strings to combine them. Then, you will be asked to solve a target expression.
+You are solving a text puzzle with symbolic operations. You will be given definitions that show what symbols represent what strings, and operations that demonstrate how operators act on strings to combine them. Then, you will be asked to solve a target expression presented as "<expression> = ?", where the expression is a sequence of symbols and operations.
+
+BE AS CONCISE AS POSSIBLE IN YOUR REASONING.
 
 You will be shown:
 1. What each symbol represents (string values) 
@@ -44,9 +59,9 @@ Here are two VERY important rules:
 1. In your chain of thought, be as concise as possible. You only have a couple of hundred tokens to work with.
 2. DO NOT pay attention to what the normal meaning of the symbols is. Use only the definitions and examples provided. It may happen that a "+" symbol is present, but it does not necessarily mean addition or concatenation. The provided examples are the only source of truth you should use.
 
-Respond ONLY with the final result string in the following format:
+Respond ONLY with the answer in the following format:
 <answer>
-result_string
+...
 </answer>
 """
 
@@ -133,31 +148,14 @@ def length_penalty_reward_func(completions, **kwargs) -> list[float]:
     Applies a penalty based on the total length of the completion text.
     """
     contents = [completion[0]["content"] for completion in completions]
-    
-    rewards = []
-    for content in contents:
-        # Calculate penalty based on length
-        # Target around 200-300 characters for good reasoning
-        target_length = 4*500 #500 tokens times 4 characters per token
-        actual_length = len(content)
-        
-        if actual_length <= target_length:
-            # No penalty for reasonable lengths
-            penalty = 0.0
-        else:
-            # Apply increasing penalty for longer texts
-            excess_length = actual_length - target_length
-            # Penalty scales with excess length, max penalty of -1.0
-            penalty = -min(1.0, excess_length / target_length)
-        
-        rewards.append(penalty)
-    
-    return rewards
+    return [-len(c) * 0.01 for c in contents]
 
 #model_name = "meta-llama/Llama-3.2-1B-Instruct"
-model_name = "unsloth/Qwen3-0.6B"
+#model_name = "unsloth/Qwen3-0.6B"
 #model_name = "Qwen/Qwen2.5-1.5B-Instruct"
 #model_name = "willcb/Qwen3-0.6B"
+#model_name = "google/gemma-3-1b-it"
+model_name = "nvidia/Nemotron-Research-Reasoning-Qwen-1.5B"
 
 output_dir="../../workspace/outputs/puzzle-grpo"
 
@@ -195,13 +193,13 @@ training_args = GRPOConfig(
     per_device_eval_batch_size=per_device_train_batch_size,
     gradient_accumulation_steps=gradient_accumulation_steps,
     num_generations=num_generations,
-    max_prompt_length=128,
+    max_prompt_length=512,
     loss_type="dr_grpo",
     max_completion_length=1024,
     num_train_epochs=1,
     report_to="wandb",
     log_on_each_node=False,
-    max_grad_norm=1.0,  # Reduced gradient clipping for stability
+    max_grad_norm=10.0,  # Reduced gradient clipping for stability
     eval_strategy="steps",
     eval_steps=eval_steps,
     save_strategy="steps",
@@ -213,20 +211,18 @@ training_args = GRPOConfig(
     top_p=0.9,        # Slightly lower for more focused sampling
     top_k=40,         # Increased for more options
     min_p=0.02,       # Slightly higher minimum probability
-    # Add repetition penalty to prevent stuck patterns
-    repetition_penalty=1.1,
 )
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.float32,  # Use full precision to avoid NaNs early in training
+    torch_dtype=torch.bfloat16,  # Use full precision to avoid NaNs early in training
     device_map="auto",
 )
 
 # Flash-attention and manual norm casting removed – these were causing numerical instabilities that pushed the gradients to NaN.
      
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-tokenizer.pad_token = tokenizer.eos_token
+#tokenizer.pad_token = tokenizer.eos_token
 
 # Update training args with proper token IDs
 training_args.eos_token_id = tokenizer.eos_token_id
